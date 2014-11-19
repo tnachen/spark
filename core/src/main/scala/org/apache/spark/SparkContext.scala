@@ -1918,7 +1918,12 @@ object SparkContext extends Logging {
         MesosNativeLibrary.load()
         val scheduler = new TaskSchedulerImpl(sc)
         val coarseGrained = sc.conf.getBoolean("spark.mesos.coarse", false)
-        val url = mesosUrl.stripPrefix("mesos://") // strip scheme from raw Mesos URLs
+        val url = if (mesosUrl.startsWith("mesos://")) {
+          mesosUrl.stripPrefix("mesos://") // strip scheme from raw Mesos URLs
+        } else {
+          mesosUrl // keep the zookeeper url scheme
+        }
+
         val backend = if (coarseGrained) {
           new CoarseMesosSchedulerBackend(scheduler, sc, url)
         } else {
