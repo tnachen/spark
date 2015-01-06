@@ -63,19 +63,24 @@ private[spark] class CoarseMesosSchedulerBackend(
   // Maximum number of cores to acquire (TODO: we'll need more flexible controls here)
   val maxCores = conf.get("spark.cores.max",  Int.MaxValue.toString).toInt
 
+  val maxExecutorsPerSlave = conf.getInt("spark.mesos.coarse.executors.max", 1)
+  val maxCpusPerExecutor = conf.getInt("spark.mesos.coarse.cores.max", Int.MaxValue)
+
   // Cores we have acquired with each Mesos task ID
   val coresByTaskId = new HashMap[Int, Int]
   var totalCoresAcquired = 0
 
-  val slaveIdsWithExecutors = new HashSet[String]
+  // Contains a mapping of slave ids to the number of executors launched.
+  val slaveIdsWithExecutors = new HashMap[String, Int]
 
   val taskIdToSlaveId = new HashMap[Int, String]
   val failuresBySlaveId = new HashMap[String, Int] // How many times tasks on each slave failed
 
-
   val extraCoresPerSlave = conf.getInt("spark.mesos.extra.cores", 0)
 
   var nextMesosTaskId = 0
+
+  val memRequired: Double = MemoryUtils.calculateTotalMemory(sc)
 
   @volatile var appId: String = _
 
@@ -204,35 +209,43 @@ private[spark] class CoarseMesosSchedulerBackend(
 
       for (offer <- offers) {
         val slaveId = offer.getSlaveId.toString
-        val mem = getResource(offer.getResourcesList, "mem")
-        val cpus = getResource(offer.getResourcesList, "cpus").toInt
-        if (totalCoresAcquired < maxCores &&
-            mem >= MemoryUtils.calculateTotalMemory(sc) &&
-            cpus >= 1 &&
+        var totalMem = getResource(offer.getResourcesList, "mem")
+        var totalCpus = getResource(offer.getResourcesList, "cpus").toInt
+
+        val tasks = new util.ArrayList[MesosTaskInfo]
+
+        var executorCount = slaveIdsWithExecutors.getOrElse(slaveId, 0)
+        // Launch as many executors that the resources are available and less
+        // than the configured max executors per slave.
+        while (totalCoresAcquired < maxCores &&
+            totalMem >= memRequired &&
+            totalCpus >= 1 &&
             failuresBySlaveId.getOrElse(slaveId, 0) < MAX_SLAVE_FAILURES &&
-            !slaveIdsWithExecutors.contains(slaveId)) {
-          // Launch an executor on the slave
-          val cpusToUse = math.min(cpus, maxCores - totalCoresAcquired)
+            executorCount < maxExecutorsPerSlave) {
+          val cpusToUse =
+            math.min(maxCpusPerExecutor, math.min(totalCpus, maxCores - totalCoresAcquired))
           totalCoresAcquired += cpusToUse
+          totalCpus -= cpusToUse
+          totalMem -= memRequired
           val taskId = newMesosTaskId()
           taskIdToSlaveId(taskId) = slaveId
-          slaveIdsWithExecutors += slaveId
+          executorCount += 1
+          slaveIdsWithExecutors(slaveId) = executorCount
           coresByTaskId(taskId) = cpusToUse
-          val task = MesosTaskInfo.newBuilder()
+          tasks.add(MesosTaskInfo.newBuilder()
             .setTaskId(TaskID.newBuilder().setValue(taskId.toString).build())
             .setSlaveId(offer.getSlaveId)
             .setCommand(createCommand(offer, cpusToUse + extraCoresPerSlave))
             .setName("Task " + taskId)
             .addResources(createResource("cpus", cpusToUse))
-            .addResources(createResource("mem",
-              MemoryUtils.calculateTotalMemory(sc)))
-            .build()
-          d.launchTasks(
-            Collections.singleton(offer.getId),  Collections.singletonList(task), filters)
+            .addResources(createResource("mem", memRequired))
+            .build())
+        }
+
+        if (tasks.isEmpty) {
+          d.declineOffer(offer.getId)
         } else {
-          // Filter it out
-          d.launchTasks(
-            Collections.singleton(offer.getId), Collections.emptyList[MesosTaskInfo](), filters)
+          d.launchTasks(Collections.singleton(offer.getId), tasks, filters)
         }
       }
     }
