@@ -64,14 +64,18 @@ private[spark] class CoarseMesosSchedulerBackend(
   // This is for cleaning up shuffle files reliably.
   private val shuffleServiceEnabled = conf.getBoolean("spark.shuffle.service.enabled", false)
 
+  val maxExecutorsPerSlave = conf.getInt("spark.mesos.coarse.executors.max", 1)
+  val maxCpusPerExecutor = conf.getInt("spark.mesos.coarse.cores.max", Int.MaxValue)
+
   // Cores we have acquired with each Mesos task ID
   val coresByTaskId = new HashMap[Int, Int]
   var totalCoresAcquired = 0
 
-  val slaveIdsWithExecutors = new HashSet[String]
-
   // Maping from slave Id to hostname
   private val slaveIdToHost = new HashMap[String, String]
+
+  // Contains a mapping of slave ids to the number of executors launched.
+  val slaveIdsWithExecutors = new HashMap[String, Int]
 
   val taskIdToSlaveId: HashBiMap[Int, String] = HashBiMap.create[Int, String]
   // How many times tasks on each slave failed
@@ -237,22 +241,26 @@ private[spark] class CoarseMesosSchedulerBackend(
         val offerAttributes = toAttributeMap(offer.getAttributesList)
         val meetsConstraints = matchesAttributeRequirements(slaveOfferConstraints, offerAttributes)
         val slaveId = offer.getSlaveId.getValue
-        val mem = getResource(offer.getResourcesList, "mem")
-        val cpus = getResource(offer.getResourcesList, "cpus").toInt
+        val totalMem = getResource(offer.getResourcesList, "mem")
+        val totalCpus = getResource(offer.getResourcesList, "cpus").toInt
         val id = offer.getId.getValue
-        if (taskIdToSlaveId.size < executorLimit &&
+        var executorCount = slaveIdsWithExecutors.getOrElse(slaveId, 0)
+        while (taskIdToSlaveId.size < executorLimit &&
             totalCoresAcquired < maxCores &&
             meetsConstraints &&
             mem >= calculateTotalMemory(sc) &&
             cpus >= 1 &&
             failuresBySlaveId.getOrElse(slaveId, 0) < MAX_SLAVE_FAILURES &&
-            !slaveIdsWithExecutors.contains(slaveId)) {
+            executorCount < maxExecutorsPerSlave) {
           // Launch an executor on the slave
           val cpusToUse = math.min(cpus, maxCores - totalCoresAcquired)
           totalCoresAcquired += cpusToUse
+          totalCpus -= cpusToUse
+          totalMem -= memRequired
           val taskId = newMesosTaskId()
-          taskIdToSlaveId.put(taskId, slaveId)
-          slaveIdsWithExecutors += slaveId
+          taskIdToSlaveId(taskId) = slaveId
+          executorCount += 1
+          slaveIdsWithExecutors(slaveId) = executorCount
           coresByTaskId(taskId) = cpusToUse
           // Gather cpu resources from the available resources and use them in the task.
           val (remainingResources, cpuResourcesToUse) =
@@ -314,7 +322,7 @@ private[spark] class CoarseMesosSchedulerBackend(
       }
 
       if (TaskState.isFinished(TaskState.fromMesos(state))) {
-        val slaveId = taskIdToSlaveId.get(taskId)
+        val slaveId = taskIdToSlaveId(taskId)
         slaveIdsWithExecutors -= slaveId
         taskIdToSlaveId.remove(taskId)
         // Remove the cores we have remembered for this task, if it's in the hashmap
