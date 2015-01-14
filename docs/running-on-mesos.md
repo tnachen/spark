@@ -226,6 +226,20 @@ See the [configuration page](configuration.html) for information on Spark config
     The final total amount of memory allocated is the maximum value between executor memory plus memoryOverhead, and overhead fraction (1.07) plus the executor memory.
   </td>
 </tr>
+<tr>
+  <td><code>spark.mesos.coarse.cores.max</code></td>
+  <td>Int.MaxValue</td>
+  <td>
+    The maximum amount of cores the coarse grained mesos scheduler will allocate per executor. This only applies for coarse grained mode.
+  </td>
+</tr>
+<tr>
+  <td><code>spark.mesos.coarse.executors.max</code></td>
+  <td>1</td>
+  <td>
+    The maximum amount of executors that the coarse grained mesos scheduler will run per slave. This only applies for coarse grained mode.
+  </td>
+</tr>
 </table>
 
 # Troubleshooting and Debugging
