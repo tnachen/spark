@@ -22,7 +22,7 @@ import java.util.{List => JList}
 import java.util.Collections
 
 import scala.collection.JavaConversions._
-import scala.collection.mutable.{HashMap, HashSet}
+import scala.collection.mutable.{ArrayBuffer, HashMap, HashSet}
 
 import org.apache.mesos.{Scheduler => MScheduler}
 import org.apache.mesos._
@@ -212,7 +212,7 @@ private[spark] class CoarseMesosSchedulerBackend(
         var totalMem = getResource(offer.getResourcesList, "mem")
         var totalCpus = getResource(offer.getResourcesList, "cpus").toInt
 
-        val tasks = new util.ArrayList[MesosTaskInfo]
+        val tasks = new ArrayBuffer[MesosTaskInfo]
 
         var executorCount = slaveIdsWithExecutors.getOrElse(slaveId, 0)
         // Launch as many executors that the resources are available and less
