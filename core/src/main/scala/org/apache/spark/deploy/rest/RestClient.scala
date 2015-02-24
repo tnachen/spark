@@ -29,8 +29,10 @@ import com.google.common.base.Charsets
 import org.apache.spark.{Logging, SparkConf, SPARK_VERSION => sparkVersion}
 
 /**
- * A client that submits applications to the standalone Master using a REST protocol.
- * This client is intended to communicate with the [[StandaloneRestServer]] and is
+ * A client that submits applications to the standalone Master and Mesos dispatcher
+ * using a REST protocol.
+ * This client is intended to communicate with the [[StandaloneRestServer]] or
+ * [[org.apache.spark.deploy.mesos.MesosClusterDispatcher]] and is
  * currently used for cluster mode only.
  *
  * In protocol version v1, the REST URL takes the form http://[host:port]/v1/submissions/[action],
@@ -52,8 +54,8 @@ import org.apache.spark.{Logging, SparkConf, SPARK_VERSION => sparkVersion}
  * implementation of this client can use that information to retry using the version specified
  * by the server.
  */
-private[spark] class StandaloneRestClient extends Logging {
-  import StandaloneRestClient._
+private[spark] class RestClient extends Logging {
+  import RestClient._
 
   /**
    * Submit an application specified by the parameters in the provided request.
@@ -215,14 +217,20 @@ private[spark] class StandaloneRestClient extends Logging {
 
   /** Return the base URL for communicating with the server, including the protocol version. */
   private def getBaseUrl(master: String): String = {
-    val masterUrl = master.stripPrefix("spark://").stripSuffix("/")
+    val masterUrl = if (master.startsWith("spark://")) {
+      master.stripPrefix("spark://").stripSuffix("/")
+    } else {
+      master.stripPrefix("mesos://").stripSuffix("/")
+    }
+
     s"http://$masterUrl/$PROTOCOL_VERSION/submissions"
   }
 
   /** Throw an exception if this is not standalone mode. */
   private def validateMaster(master: String): Unit = {
-    if (!master.startsWith("spark://")) {
-      throw new IllegalArgumentException("This REST client is only supported in standalone mode.")
+    if (!master.startsWith("spark://") && !master.startsWith("mesos://")) {
+      throw new IllegalArgumentException(
+        "This REST client is only supported in standalone or Mesos mode.")
     }
   }
 
@@ -291,7 +299,7 @@ private[spark] class StandaloneRestClient extends Logging {
   }
 }
 
-private[spark] object StandaloneRestClient {
+private[spark] object RestClient {
   val REPORT_DRIVER_STATUS_INTERVAL = 1000
   val REPORT_DRIVER_STATUS_MAX_TRIES = 10
   val PROTOCOL_VERSION = "v1"
@@ -311,7 +319,7 @@ private[spark] object StandaloneRestClient {
     }
     val sparkProperties = conf.getAll.toMap
     val environmentVariables = env.filter { case (k, _) => k.startsWith("SPARK_") }
-    val client = new StandaloneRestClient
+    val client = new RestClient
     val submitRequest = client.constructSubmitRequest(
       appResource, mainClass, appArgs, sparkProperties, environmentVariables)
     client.createSubmission(master, submitRequest)
@@ -319,7 +327,7 @@ private[spark] object StandaloneRestClient {
 
   def main(args: Array[String]): Unit = {
     if (args.size < 2) {
-      sys.error("Usage: StandaloneRestClient [app resource] [main class] [app args*]")
+      sys.error("Usage: RestClient [app resource] [main class] [app args*]")
       sys.exit(1)
     }
     val appResource = args(0)

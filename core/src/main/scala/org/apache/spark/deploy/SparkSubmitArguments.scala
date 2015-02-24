@@ -221,8 +221,9 @@ private[spark] class SparkSubmitArguments(args: Seq[String], env: Map[String, St
   }
 
   private def validateKillArguments(): Unit = {
-    if (!master.startsWith("spark://")) {
-      SparkSubmit.printErrorAndExit("Killing submissions is only supported in standalone mode!")
+    if (!master.startsWith("spark://") && !master.startsWith("mesos://")) {
+      SparkSubmit.printErrorAndExit(
+        "Killing submissions is only supported in standalone or Mesos mode!")
     }
     if (submissionToKill == null) {
       SparkSubmit.printErrorAndExit("Please specify a submission to kill.")
@@ -230,9 +231,9 @@ private[spark] class SparkSubmitArguments(args: Seq[String], env: Map[String, St
   }
 
   private def validateStatusRequestArguments(): Unit = {
-    if (!master.startsWith("spark://")) {
+    if (!master.startsWith("spark://") && !master.startsWith("mesos://")) {
       SparkSubmit.printErrorAndExit(
-        "Requesting submission statuses is only supported in standalone mode!")
+        "Requesting submission statuses is only supported in standalone or Mesos mode!")
     }
     if (submissionToRequestStatusFor == null) {
       SparkSubmit.printErrorAndExit("Please specify a submission to request status for.")
@@ -492,6 +493,8 @@ private[spark] class SparkSubmitArguments(args: Seq[String], env: Map[String, St
         |
         | Spark standalone with cluster deploy mode only:
         |  --driver-cores NUM          Cores for driver (Default: 1).
+        |
+        | Spark standalone or Mesos with cluster deploy mode only:
         |  --supervise                 If given, restarts the driver on failure.
         |  --kill SUBMISSION_ID        If given, kills the driver specified.
         |  --status SUBMISSION_ID      If given, requests the status of the driver specified.
