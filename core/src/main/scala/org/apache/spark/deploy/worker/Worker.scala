@@ -35,7 +35,7 @@ import org.apache.spark.{Logging, SecurityManager, SparkConf}
 import org.apache.spark.deploy.{Command, ExecutorDescription, ExecutorState}
 import org.apache.spark.deploy.DeployMessages._
 import org.apache.spark.deploy.master.{DriverState, Master}
-import org.apache.spark.deploy.worker.ui.WorkerWebUI
+import org.apache.spark.deploy.worker.ui.{ActiveWebUiUrlAccessor, WorkerWebUI}
 import org.apache.spark.metrics.MetricsSystem
 import org.apache.spark.util.{ActorLogReceive, AkkaUtils, SignalLogger, Utils}
 
@@ -54,7 +54,7 @@ private[spark] class Worker(
     workDirPath: String = null,
     val conf: SparkConf,
     val securityMgr: SecurityManager)
-  extends Actor with ActorLogReceive with Logging {
+  extends Actor with ActorLogReceive with Logging with ActiveWebUiUrlAccessor {
   import context.dispatcher
 
   Utils.checkHost(host, "Expected hostname")
@@ -93,6 +93,9 @@ private[spark] class Worker(
   var masterAddress: Address = null
   var activeMasterUrl: String = ""
   var activeMasterWebUiUrl : String = ""
+
+  def activeWebUiUrl: String = activeMasterWebUiUrl
+
   val akkaUrl = AkkaUtils.address(
     AkkaUtils.protocol(context.system),
     actorSystemName,
