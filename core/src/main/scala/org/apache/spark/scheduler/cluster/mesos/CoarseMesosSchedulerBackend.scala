@@ -28,7 +28,7 @@ import org.apache.mesos.{Scheduler => MScheduler}
 import org.apache.mesos._
 import org.apache.mesos.Protos.{TaskInfo => MesosTaskInfo, TaskState => MesosTaskState, _}
 
-import org.apache.spark.{Logging, SparkContext, SparkEnv, SparkException}
+import org.apache.spark.{SparkContext, SparkEnv, SparkException}
 import org.apache.spark.scheduler.TaskSchedulerImpl
 import org.apache.spark.scheduler.cluster.CoarseGrainedSchedulerBackend
 import org.apache.spark.util.{Utils, AkkaUtils}
@@ -49,16 +49,9 @@ private[spark] class CoarseMesosSchedulerBackend(
     master: String)
   extends CoarseGrainedSchedulerBackend(scheduler, sc.env.actorSystem)
   with MScheduler
-  with Logging {
+  with MesosSchedulerHelper {
 
   val MAX_SLAVE_FAILURES = 2     // Blacklist a slave after this many failures
-
-  // Lock used to wait for scheduler to be registered
-  var isRegistered = false
-  val registeredLock = new Object()
-
-  // Driver for talking to Mesos
-  var driver: SchedulerDriver = null
 
   // Maximum number of cores to acquire (TODO: we'll need more flexible controls here)
   val maxCores = conf.get("spark.cores.max",  Int.MaxValue.toString).toInt
@@ -87,26 +80,8 @@ private[spark] class CoarseMesosSchedulerBackend(
 
   override def start() {
     super.start()
-
-    synchronized {
-      new Thread("CoarseMesosSchedulerBackend driver") {
-        setDaemon(true)
-        override def run() {
-          val scheduler = CoarseMesosSchedulerBackend.this
-          val fwInfo = FrameworkInfo.newBuilder().setUser(sc.sparkUser).setName(sc.appName).build()
-          driver = new MesosSchedulerDriver(scheduler, fwInfo, master)
-          try { {
-            val ret = driver.run()
-            logInfo("driver.run() returned with code " + ret)
-          }
-          } catch {
-            case e: Exception => logError("driver.run() failed", e)
-          }
-        }
-      }.start()
-
-      waitForRegister()
-    }
+    val fwInfo = FrameworkInfo.newBuilder().setUser(sc.sparkUser).setName(sc.appName).build()
+    startScheduler("CoarseMesosSchedulerBackend", master, CoarseMesosSchedulerBackend.this, fwInfo)
   }
 
   def createCommand(offer: Offer, numCores: Int): CommandInfo = {
@@ -183,18 +158,7 @@ private[spark] class CoarseMesosSchedulerBackend(
   override def registered(d: SchedulerDriver, frameworkId: FrameworkID, masterInfo: MasterInfo) {
     appId = frameworkId.getValue
     logInfo("Registered as framework ID " + appId)
-    registeredLock.synchronized {
-      isRegistered = true
-      registeredLock.notifyAll()
-    }
-  }
-
-  def waitForRegister() {
-    registeredLock.synchronized {
-      while (!isRegistered) {
-        registeredLock.wait()
-      }
-    }
+    markRegistered()
   }
 
   override def disconnected(d: SchedulerDriver) {}
@@ -245,14 +209,6 @@ private[spark] class CoarseMesosSchedulerBackend(
     }
   }
 
-  /** Helper function to pull out a resource from a Mesos Resources protobuf */
-  private def getResource(res: JList[Resource], name: String): Double = {
-    for (r <- res if r.getName == name) {
-      return r.getScalar.getValue
-    }
-    0
-  }
-
   /** Build a Mesos resource protobuf object */
   private def createResource(resourceName: String, quantity: Double): Protos.Resource = {
     Resource.newBuilder()
@@ -260,14 +216,6 @@ private[spark] class CoarseMesosSchedulerBackend(
       .setType(Value.Type.SCALAR)
       .setScalar(Value.Scalar.newBuilder().setValue(quantity).build())
       .build()
-  }
-
-  /** Check whether a Mesos task state represents a finished task */
-  private def isFinished(state: MesosTaskState) = {
-    state == MesosTaskState.TASK_FINISHED ||
-      state == MesosTaskState.TASK_FAILED ||
-      state == MesosTaskState.TASK_KILLED ||
-      state == MesosTaskState.TASK_LOST
   }
 
   override def statusUpdate(d: SchedulerDriver, status: TaskStatus) {
