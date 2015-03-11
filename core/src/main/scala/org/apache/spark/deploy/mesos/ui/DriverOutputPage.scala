@@ -30,7 +30,7 @@ class DriverOutputPage(parent: MesosClusterUI) extends WebUIPage("") {
 
     val queuedHeaders = Seq("DriverID", "Submit Date", "Description")
     val driverHeaders = queuedHeaders ++
-      Seq("Start Date", "Mesos Slave ID", "Mesos Task ID", "State", "Logs")
+      Seq("Start Date", "Mesos Slave ID", "Mesos Task ID", "State")
 
     val queuedTable = UIUtils.listingTable(queuedHeaders, queuedRow, state.queuedDrivers)
     val launchedTable = UIUtils.listingTable(driverHeaders, driverRow, state.launchedDrivers)
@@ -68,10 +68,6 @@ class DriverOutputPage(parent: MesosClusterUI) extends WebUIPage("") {
       <td>{state.slaveId}</td>
       <td>{state.taskId}</td>
       <td>{state.taskState}</td>
-      <td>
-        <a href={""}>stdout</a>,
-        <a href={""}>stderr</a>
-      </td>
     </tr>
   }
 }

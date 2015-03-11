@@ -83,6 +83,7 @@ private[spark] trait ClusterScheduler {
 private[spark] class MesosClusterScheduler(conf: SparkConf)
   extends Scheduler with MesosSchedulerHelper with ClusterScheduler {
 
+  var frameworkUrl: String = _
   val master = conf.get("spark.master")
   val appName = conf.get("spark.app.name")
   val capacity = conf.getInt("spark.mesos.driver.capacity", 200)
@@ -131,7 +132,11 @@ private[spark] class MesosClusterScheduler(conf: SparkConf)
 
   def start() {
     val fwInfo = FrameworkInfo.newBuilder()
-      .setUser(Utils.getCurrentUserName()).setName(appName).build()
+      .setUser(Utils.getCurrentUserName())
+      .setName(appName)
+      .setWebuiUrl(frameworkUrl)
+      .setCheckpoint(true)
+      .build()
     startScheduler("MesosClusterScheduler", master, MesosClusterScheduler.this, fwInfo)
   }
 
@@ -191,12 +196,14 @@ private[spark] class MesosClusterScheduler(conf: SparkConf)
         s"cd $basename*; $prefixEnv $cmd")
     } else {
       val executorSparkHome = req.conf.getOption("spark.mesos.executor.home")
+        .orElse(conf.getOption("spark.home"))
+        .orElse(Option(System.getenv("SPARK_HOME")))
         .getOrElse {
           throw new SparkException("Executor Spark home `spark.mesos.executor.home` is not set!")
         }
 
       val cmd =
-        Seq(new File(executorSparkHome, "./bin/spark-submit"),
+        Seq(new File(executorSparkHome, "bin/spark-submit"),
             "--class", desc.command.mainClass,
             "--master", s"mesos://${conf.get("spark.master")}",
             desc.jarUrl.split("/").last)
