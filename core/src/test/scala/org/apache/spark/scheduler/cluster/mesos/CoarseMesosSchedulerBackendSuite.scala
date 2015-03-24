@@ -104,7 +104,7 @@ class CoarseMesosSchedulerBackendSuite extends SparkFunSuite
     val mesosOffers = new java.util.ArrayList[Offer]
     mesosOffers.add(createOffer("o1", "s1", minMem, minCpu))
 
-    val taskID0 = TaskID.newBuilder().setValue("0").build()
+    val taskID0 = TaskID.newBuilder().setValue("s1/0").build()
 
     backend.resourceOffers(driver, mesosOffers)
     verify(driver, times(1)).launchTasks(

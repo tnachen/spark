@@ -17,26 +17,32 @@
 
 package org.apache.spark.scheduler.mesos
 
-import org.scalatest.{Matchers, FunSuite}
-import org.apache.spark.{SparkEnv, SparkConf, SparkContext, LocalSparkContext}
-import org.apache.spark.scheduler.{TaskDescription, WorkerOffer, TaskSchedulerImpl}
-import org.apache.spark.scheduler.cluster.mesos.{CoarseMesosSchedulerBackend, MemoryUtils}
-import org.apache.mesos.SchedulerDriver
-import org.apache.mesos.Protos._
-import org.scalatest.mock.EasyMockSugar
-import org.apache.mesos.Protos.Value.Scalar
-import org.easymock.{Capture, EasyMock}
 import java.nio.ByteBuffer
 import java.util.Collections
 import java.util
+
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
-import akka.actor.ActorSystem
+
+import org.mockito.Mockito._
+import org.mockito.{Matchers => MMatchers, ArgumentCaptor}
+import org.scalatest.{Matchers, FunSuite}
+import org.scalatest.mock.MockitoSugar
+
+import org.apache.mesos.SchedulerDriver
+import org.apache.mesos.Protos._
+import org.apache.mesos.Protos.Value.Scalar
+
+import org.apache.spark.{SecurityManager, SparkEnv, SparkConf, SparkContext, LocalSparkContext}
+import org.apache.spark.scheduler.{TaskDescription, WorkerOffer, TaskSchedulerImpl}
+import org.apache.spark.scheduler.cluster.mesos.{CoarseMesosSchedulerBackend}
+
+
 
 class CoarseMesosSchedulerBackendSuite extends FunSuite
   with Matchers
   with LocalSparkContext
-  with EasyMockSugar {
+  with MockitoSugar {
 
   test("launch multiple executors") {
     def createOffer(id: Int, mem: Int, cpu: Int) = {
@@ -53,28 +59,28 @@ class CoarseMesosSchedulerBackendSuite extends FunSuite
         .setSlaveId(SlaveID.newBuilder().setValue(s"s${id.toString}")).setHostname(s"host${id.toString}").build()
     }
 
-    val driver = EasyMock.createMock(classOf[SchedulerDriver])
-    val taskScheduler = EasyMock.createMock(classOf[TaskSchedulerImpl])
+    val driver = mock[SchedulerDriver]
+    val taskScheduler = mock[TaskSchedulerImpl]
 
-    val env = EasyMock.createMock(classOf[SparkEnv])
-    val actorSystem = EasyMock.createMock(classOf[ActorSystem])
-    EasyMock.expect(env.actorSystem).andReturn(actorSystem)
-    EasyMock.replay(env)
-
-    val sc = EasyMock.createMock(classOf[SparkContext])
-    EasyMock.expect(sc.executorMemory).andReturn(100).anyTimes()
-    EasyMock.expect(sc.getSparkHome()).andReturn(Option("/path")).anyTimes()
-    EasyMock.expect(sc.executorEnvs).andReturn(new mutable.HashMap).anyTimes()
-    EasyMock.expect(sc.env).andReturn(env)
+    val env = mock[SparkEnv]
+    val sc = mock[SparkContext]
+    when(sc.executorMemory).thenReturn(100)
+    when(sc.executorEnvs).thenReturn(new mutable.HashMap[String, String])
+    when(sc.getSparkHome()).thenReturn(Option("/path"))
+    when(sc.env).thenReturn(env)
     val conf = new SparkConf
     conf.set("spark.driver.host", "localhost")
     conf.set("spark.driver.port", "1234")
     conf.set("spark.mesos.coarse.executors.max", "2")
+    conf.set("spark.mesos.coarse.coresPerExecutor.max", "2")
     conf.set("spark.mesos.coarse.cores.max", "2")
-    EasyMock.expect(sc.conf).andReturn(conf).anyTimes()
-    EasyMock.replay(sc)
+    when(sc.conf).thenReturn(conf)
 
-    val minMem = MemoryUtils.calculateTotalMemory(sc).toInt
+    val securityManager = mock[SecurityManager]
+
+    val backend = new CoarseMesosSchedulerBackend(taskScheduler, sc, "master", securityManager)
+
+    val minMem = backend.calculateTotalMemory(sc)
     val minCpu = 2
 
     val mesosOffers = new java.util.ArrayList[Offer]
@@ -89,27 +95,21 @@ class CoarseMesosSchedulerBackendSuite extends FunSuite
 
     val taskDesc = new TaskDescription(1L, 0, "s1", "n1", 0, ByteBuffer.wrap(new Array[Byte](0)))
     val taskDesc2 = new TaskDescription(2L, 0, "s2", "n2", 0, ByteBuffer.wrap(new Array[Byte](0)))
-    EasyMock.expect(taskScheduler.resourceOffers(EasyMock.eq(expectedWorkerOffers)))
-      .andReturn(Seq(Seq(taskDesc, taskDesc2)))
-    EasyMock.expect(taskScheduler.CPUS_PER_TASK).andReturn(2).anyTimes()
-    EasyMock.expect(taskScheduler.sc).andReturn(sc)
-    EasyMock.replay(taskScheduler)
+    when(taskScheduler.resourceOffers(MMatchers.eq(expectedWorkerOffers)))
+      .thenReturn(Seq(Seq(taskDesc, taskDesc2)))
+    when(taskScheduler.CPUS_PER_TASK).thenReturn(2)
+    when(taskScheduler.sc).thenReturn(sc)
 
-    val backend = new CoarseMesosSchedulerBackend(taskScheduler, sc, "master")
-
-    val capture = new Capture[util.Collection[TaskInfo]]
-    EasyMock.expect(
+    val capture = ArgumentCaptor.forClass(classOf[util.Collection[TaskInfo]])
+    when(
       driver.launchTasks(
-        EasyMock.eq(Collections.singleton(mesosOffers.get(0).getId)),
-        EasyMock.capture(capture),
-        EasyMock.anyObject(classOf[Filters])
-      )
-    ).andReturn(Status.valueOf(1)).once
-    EasyMock.replay(driver)
+        MMatchers.eq(Collections.singleton(mesosOffers.get(0).getId)),
+        capture.capture(),
+        MMatchers.any())
+    ).thenReturn(Status.valueOf(1))
 
     backend.resourceOffers(driver, mesosOffers)
 
-    EasyMock.verify(driver)
     assert(capture.getValue.size() == 2)
     val iter = capture.getValue.iterator()
     val taskInfo = iter.next()
@@ -129,15 +129,11 @@ class CoarseMesosSchedulerBackendSuite extends FunSuite
     // Already capped the max executors, shouldn't launch a new one.
     val mesosOffers2 = new java.util.ArrayList[Offer]
     mesosOffers2.add(createOffer(1, minMem, minCpu))
-    EasyMock.reset(taskScheduler)
-    EasyMock.reset(driver)
-    EasyMock.expect(taskScheduler.resourceOffers(EasyMock.anyObject(classOf[Seq[WorkerOffer]])).andReturn(Seq(Seq())))
-    EasyMock.expect(taskScheduler.CPUS_PER_TASK).andReturn(2).anyTimes()
-    EasyMock.replay(taskScheduler)
-    EasyMock.expect(driver.declineOffer(mesosOffers2.get(0).getId)).andReturn(Status.valueOf(1)).times(1)
-    EasyMock.replay(driver)
+    when(taskScheduler.resourceOffers(MMatchers.any(classOf[Seq[WorkerOffer]])))
+      .thenReturn(Seq(Seq()))
+    when(taskScheduler.CPUS_PER_TASK).thenReturn(2)
+    when(driver.declineOffer(mesosOffers2.get(0).getId)).thenReturn(Status.valueOf(1))
 
     backend.resourceOffers(driver, mesosOffers2)
-    EasyMock.verify(driver)
   }
 }
