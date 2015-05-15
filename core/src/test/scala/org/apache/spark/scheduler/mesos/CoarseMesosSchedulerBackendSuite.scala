@@ -20,27 +20,17 @@ package org.apache.spark.scheduler.mesos
 import java.util
 import java.util.Collections
 
-import scala.collection.mutable
-
-import akka.actor.ActorSystem
-
-import com.typesafe.config.Config
-
 import org.apache.mesos.Protos.Value.Scalar
 import org.apache.mesos.Protos._
 import org.apache.mesos.SchedulerDriver
-import org.apache.mesos.MesosSchedulerDriver
 import org.apache.spark.scheduler.TaskSchedulerImpl
-import org.apache.spark.scheduler.cluster.mesos.{ CoarseMesosSchedulerBackend, MemoryUtils }
-import org.apache.spark.{ LocalSparkContext, SparkConf, SparkEnv, SparkContext }
-
+import org.apache.spark.scheduler.cluster.mesos.CoarseMesosSchedulerBackend
+import org.apache.spark.{LocalSparkContext, SparkConf, SparkContext}
+import org.mockito.Matchers
 import org.mockito.Matchers._
 import org.mockito.Mockito._
-import org.mockito.{ ArgumentCaptor, Matchers }
-
-import org.scalatest.FunSuite
+import org.scalatest.{BeforeAndAfter, FunSuite}
 import org.scalatest.mock.MockitoSugar
-import org.scalatest.BeforeAndAfter
 
 class CoarseMesosSchedulerBackendSuite extends FunSuite
     with LocalSparkContext
@@ -88,6 +78,15 @@ class CoarseMesosSchedulerBackendSuite extends FunSuite
     sc = new SparkContext(sparkConf)
   }
 
+  private val MEMORY_OVERHEAD_FRACTION = 0.10
+  private val MEMORY_OVERHEAD_MINIMUM = 384
+
+  def calculateTotalMemory(sc: SparkContext): Int = {
+    sc.conf.getInt("spark.mesos.executor.memoryOverhead",
+      math.max(MEMORY_OVERHEAD_FRACTION * sc.executorMemory, MEMORY_OVERHEAD_MINIMUM).toInt) +
+      sc.executorMemory
+  }
+
   test("mesos supports killing and limiting executors") {
     val driver = mock[SchedulerDriver]
     val taskScheduler = mock[TaskSchedulerImpl]
@@ -96,7 +95,7 @@ class CoarseMesosSchedulerBackendSuite extends FunSuite
     sparkConf.set("spark.driver.host", "driverHost")
     sparkConf.set("spark.driver.port", "1234")
 
-    val minMem = MemoryUtils.calculateTotalMemory(sc).toInt
+    val minMem = calculateTotalMemory(sc).toInt
     val minCpu = 4
 
     val mesosOffers = new java.util.ArrayList[Offer]
@@ -144,7 +143,7 @@ class CoarseMesosSchedulerBackendSuite extends FunSuite
     val taskScheduler = mock[TaskSchedulerImpl]
     when(taskScheduler.sc).thenReturn(sc)
 
-    val minMem = MemoryUtils.calculateTotalMemory(sc).toInt + 1024
+    val minMem = calculateTotalMemory(sc).toInt + 1024
     val minCpu = 4
 
     val mesosOffers = new java.util.ArrayList[Offer]

@@ -83,6 +83,9 @@ private[spark] class CoarseMesosSchedulerBackend(
 
   val extraCoresPerSlave = conf.getInt("spark.mesos.extra.cores", 0)
 
+  // Offer constraints
+  val slaveOfferConstraints = parseConstraintString(sc.conf.get("spark.mesos.constraints", ""))
+
   var nextMesosTaskId = 0
 
   @volatile var appId: String = _
@@ -193,13 +196,16 @@ private[spark] class CoarseMesosSchedulerBackend(
     stateLock.synchronized {
       val filters = Filters.newBuilder().setRefuseSeconds(5).build()
 
-      for (offer <- offers) {
-        val slaveId = offer.getSlaveId.getValue
+      // filter out all the offers that do not meet constraints (if specified)
+      val qualifyingOffers = filterOffersByConstraints(offers, slaveOfferConstraints)
+
+      for (offer <- qualifyingOffers) {
+        val slaveId = offer.getSlaveId.toString
         val mem = getResource(offer.getResourcesList, "mem")
         val cpus = getResource(offer.getResourcesList, "cpus").toInt
         if (taskIdToSlaveId.size < executorLimitOption.getOrElse(Int.MaxValue) &&
             totalCoresAcquired < maxCores &&
-            mem >= MemoryUtils.calculateTotalMemory(sc) &&
+            mem >= calculateTotalMemory(sc) &&
             cpus >= 1 &&
             failuresBySlaveId.getOrElse(slaveId, 0) < MAX_SLAVE_FAILURES &&
             !slaveIdsWithExecutors.contains(slaveId)) {
@@ -217,7 +223,7 @@ private[spark] class CoarseMesosSchedulerBackend(
             .setName("Task " + taskId)
             .addResources(createResource("cpus", cpusToUse))
             .addResources(createResource("mem",
-              MemoryUtils.calculateTotalMemory(sc)))
+              calculateTotalMemory(sc)))
 
           sc.conf.getOption("spark.mesos.executor.docker.image").foreach { image =>
             MesosSchedulerBackendUtil
@@ -234,14 +240,6 @@ private[spark] class CoarseMesosSchedulerBackend(
     }
   }
 
-  /** Build a Mesos resource protobuf object */
-  private def createResource(resourceName: String, quantity: Double): Protos.Resource = {
-    Resource.newBuilder()
-      .setName(resourceName)
-      .setType(Value.Type.SCALAR)
-      .setScalar(Value.Scalar.newBuilder().setValue(quantity).build())
-      .build()
-  }
 
   override def statusUpdate(d: SchedulerDriver, status: TaskStatus) {
     val taskId = status.getTaskId.getValue.toInt
