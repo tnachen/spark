@@ -203,6 +203,14 @@ class BlockManagerMaster(
   }
 
   /**
+   * Return all block managers that were known to this block manager master, even if
+   * they de-registered in the meantime.
+   */
+  def getAllBlockManagers: Set[BlockManagerId] = {
+    driverEndpoint.askWithRetry[Set[BlockManagerId]](GetAllBlockManagers)
+  }
+
+  /**
    * Find out if the executor has cached blocks. This method does not consider broadcast blocks,
    * since they are not reported the master.
    */

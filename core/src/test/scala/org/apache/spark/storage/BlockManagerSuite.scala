@@ -34,6 +34,8 @@ import org.apache.spark.rpc.RpcEnv
 import org.apache.spark._
 import org.apache.spark.executor.DataReadMethod
 import org.apache.spark.network.nio.NioBlockTransferService
+import org.apache.spark.network.shuffle.ShuffleClient
+import org.apache.spark.network.shuffle.ExternalShuffleClient
 import org.apache.spark.scheduler.LiveListenerBus
 import org.apache.spark.serializer.{JavaSerializer, KryoSerializer}
 import org.apache.spark.shuffle.hash.HashShuffleManager
@@ -64,10 +66,11 @@ class BlockManagerSuite extends SparkFunSuite with Matchers with BeforeAndAfterE
 
   private def makeBlockManager(
       maxMem: Long,
-      name: String = SparkContext.DRIVER_IDENTIFIER): BlockManager = {
+      name: String = SparkContext.DRIVER_IDENTIFIER,
+      shuffleClient: Option[ShuffleClient] = None): BlockManager = {
     val transfer = new NioBlockTransferService(conf, securityMgr)
     val manager = new BlockManager(name, rpcEnv, master, serializer, maxMem, conf,
-      mapOutputTracker, shuffleManager, transfer, securityMgr, 0)
+      mapOutputTracker, shuffleManager, transfer, securityMgr, 0, shuffleClient)
     manager.initialize("app-id")
     manager
   }
@@ -1250,5 +1253,23 @@ class BlockManagerSuite extends SparkFunSuite with Matchers with BeforeAndAfterE
     assert(result.size === 10000)
     assert(result.data === Right(bytes))
     assert(result.droppedBlocks === Nil)
+  }
+
+  test("block managers are correctly recorded by the master") {
+    store = makeBlockManager(1200, "b1")
+    store2 = makeBlockManager(1200, "b2")
+
+    val managers = master.getAllBlockManagers
+    assert(managers.size === 2, "Not all block managers were returned")
+  }
+
+  test("block managers are remembered after being shut down") {
+    store = makeBlockManager(1200, "b1")
+    store2 = makeBlockManager(1200, "b2")
+
+    master.removeExecutor(store.blockManagerId.executorId)
+
+    val managers = master.getAllBlockManagers
+    assert(managers.size === 2, "Not all block managers were returned")
   }
 }

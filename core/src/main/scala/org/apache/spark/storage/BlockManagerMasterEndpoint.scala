@@ -43,8 +43,14 @@ class BlockManagerMasterEndpoint(
     listenerBus: LiveListenerBus)
   extends ThreadSafeRpcEndpoint with Logging {
 
+  private val externalShuffleService: Boolean =
+    conf.getBoolean("spark.shuffle.service.enabled", false)
+
   // Mapping from block manager id to the block manager's information.
   private val blockManagerInfo = new mutable.HashMap[BlockManagerId, BlockManagerInfo]
+
+  // all shuffle service endpoints where we had data during this run
+  private val shuffleServiceEndpoints = new mutable.HashSet[BlockManagerId]
 
   // Mapping from executor ID to block manager ID.
   private val blockManagerIdByExecutor = new mutable.HashMap[String, BlockManagerId]
@@ -112,6 +118,9 @@ class BlockManagerMasterEndpoint(
 
     case BlockManagerHeartbeat(blockManagerId) =>
       context.reply(heartbeatReceived(blockManagerId))
+
+    case GetAllBlockManagers =>
+      context.reply(shuffleServiceEndpoints.toSet)
 
     case HasCachedBlocks(executorId) =>
       blockManagerIdByExecutor.get(executorId) match {
@@ -316,6 +325,8 @@ class BlockManagerMasterEndpoint(
 
       blockManagerInfo(id) = new BlockManagerInfo(
         id, System.currentTimeMillis(), maxMemSize, slaveEndpoint)
+
+      shuffleServiceEndpoints += id
     }
     listenerBus.post(SparkListenerBlockManagerAdded(time, id, maxMemSize))
   }
