@@ -299,7 +299,7 @@ private[spark] class MesosClusterScheduler(
       .setName(appName)
       .setWebuiUrl(frameworkUrl)
       .setCheckpoint(true)
-      .setFailoverTimeout(Integer.MAX_VALUE) // Setting to max so tasks keep running on crash
+      .setFailoverTimeout(conf.getInt("spark.mesos.cluster.failoverTimeout", Integer.MAX_VALUE))
     fwId.foreach { id =>
       builder.setId(FrameworkID.newBuilder().setValue(id).build())
       frameworkId = id

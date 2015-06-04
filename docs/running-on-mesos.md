@@ -298,6 +298,42 @@ See the [configuration page](configuration.html) for information on Spark config
     the final overhead will be this value.
   </td>
 </tr>
+<tr>
+  <td><code>spark.mesos.maxDrivers</code></td>
+  <td>200</td>
+  <td>
+    The maximum amount of drivers that Mesos cluster mode will be able to queue on the
+    cluster scheduler. If the maximum amount of drivers is reached, the Mesos cluster scheduler
+    will reject new driver requests
+  </td>
+</tr>
+<tr>
+  <td><code>spark.mesos.retainedDrivers</code></td>
+  <td>200</td>
+  <td>
+    The maximum amount of completed drivers that Mesos cluster mode will keep in memory, which the history
+    is available on the Mesos cluster UI.
+  </td>
+</tr>
+<tr>
+  <td><code>spark.mesos.cluster.retry.wait.max</code></td>
+  <td>1 minute</td>
+  <td>
+    The maximum amount of time the Mesos cluster scheduler will wait until it retries a failed driver
+    that was submitted with supervise enabled. The Mesos cluster scheduler will exponentially backoff retrying
+    up until this configured amount of time.
+  </td>
+</tr>
+<tr>
+  <td><code>spark.mesos.cluster.failoverTimeout</code></td>
+  <td>Integer.MAX_VALUE seconds</td>
+  <td>
+    The maximum amount of time the Mesos will hold off terminating all tasks until the framework registers when
+    framework becomes disconnected from Mesos. By default this is set to a very high amount as we expect the Mesos
+    cluster scheduler framework to always be running and should recover all the tasks when it resumes.
+    To let the framework simply terminate and remove all the tasks on exit, this configuration should be set to zero.
+  </td>
+</tr>
 </table>
 
 # Troubleshooting and Debugging
