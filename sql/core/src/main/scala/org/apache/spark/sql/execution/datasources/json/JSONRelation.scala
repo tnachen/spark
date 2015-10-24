@@ -81,7 +81,7 @@ private[sql] class JSONRelation(
 
   private def createBaseRdd(inputPaths: Array[FileStatus]): RDD[String] = {
     val job = new Job(sqlContext.sparkContext.hadoopConfiguration)
-    val conf = job.getConfiguration
+    val conf = SparkHadoopUtil.get.getConfigurationFromJobContext(job)
 
     val paths = inputPaths.map(_.getPath)
 
@@ -161,11 +161,10 @@ private[json] class JsonOutputWriter(
     context: TaskAttemptContext)
   extends OutputWriter with SparkHadoopMapRedUtil with Logging {
 
-  val writer = new CharArrayWriter()
+  private[this] val writer = new CharArrayWriter()
   // create the Generator without separator inserted between 2 records
-  val gen = new JsonFactory().createGenerator(writer).setRootValueSeparator(null)
-
-  val result = new Text()
+  private[this] val gen = new JsonFactory().createGenerator(writer).setRootValueSeparator(null)
+  private[this] val result = new Text()
 
   private val recordWriter: RecordWriter[NullWritable, Text] = {
     new TextOutputFormat[NullWritable, Text]() {
@@ -182,7 +181,7 @@ private[json] class JsonOutputWriter(
   override def write(row: Row): Unit = throw new UnsupportedOperationException("call writeInternal")
 
   override protected[sql] def writeInternal(row: InternalRow): Unit = {
-    JacksonGenerator(dataSchema, gen, row)
+    JacksonGenerator(dataSchema, gen)(row)
     gen.flush()
 
     result.set(writer.toString)
