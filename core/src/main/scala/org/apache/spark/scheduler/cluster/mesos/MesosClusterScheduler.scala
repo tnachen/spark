@@ -367,8 +367,17 @@ private[spark] class MesosClusterScheduler(
       ""
     }
     val envBuilder = Environment.newBuilder()
+    val overridingProperties =
+      conf.getAll.filter { case (k, v) => k.startsWith("spark.mesos.cluster.taskProperty.") }
+        .map { case (k, v) => "-D" + k.substring("spark.mesos.cluster.taskProperty.".length) + "=" + v }
+        .mkString(" ")
     desc.command.environment.foreach { case (k, v) =>
-      envBuilder.addVariables(Variable.newBuilder().setName(k).setValue(v).build())
+      val value = if (k.equals("SPARK_JAVA_OPTS")) {
+        s"$v $overridingProperties"
+      } else {
+        v
+      }
+      envBuilder.addVariables(Variable.newBuilder().setName(k).setValue(value).build())
     }
     // Pass all spark properties to executor.
     val executorOpts = desc.schedulerProperties.map { case (k, v) => s"-D$k=$v" }.mkString(" ")
