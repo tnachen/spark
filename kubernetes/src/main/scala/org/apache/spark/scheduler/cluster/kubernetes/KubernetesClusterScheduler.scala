@@ -208,30 +208,15 @@ private[spark] class KubernetesClusterScheduler(conf: SparkConf)
       .inNamespace(getNamespace())
       .withName(svcName)
       .create(svc)
-
-//    try {
-//      while (true) {
-//        client
-//          .pods()
-//          .inNamespace("default")
-//          .withName("spark-driver")
-//          .tailingLines(10)
-//          .watchLog(System.out)
-//        Thread.sleep(5 * 1000)
-//      }
-//    } catch {
-//      case e: Exception => logError(e.getMessage)
-//    }
   }
 
   def setupKubernetesClient(): KubernetesClient = {
       val sparkMaster = new java.net.URI(conf.get("spark.master"))
       if (sparkMaster.getHost() == "default") {
-        return new DefaultKubernetesClient()
+        new DefaultKubernetesClient()
       } else {
         var config = new ConfigBuilder().withMasterUrl(sparkMaster.getHost()).build
-        var client = new DefaultKubernetesClient(config)
-        return client
+        new DefaultKubernetesClient(config)
       }
   }
 
