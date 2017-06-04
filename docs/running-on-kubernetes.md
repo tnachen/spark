@@ -665,7 +665,7 @@ from the other deployment modes. See the [configuration page](configuration.html
   <td><code>spark.kubernetes.docker.image.pullPolicy</code></td>
   <td><code>IfNotPresent</code></td>
   <td>
-    Docker image pull policy to used when pulling Docker images with Kubernetes.
+    Docker image pull policy used when pulling Docker images with Kubernetes.
   </td>
 </tr>
 </table>
