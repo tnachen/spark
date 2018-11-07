@@ -43,6 +43,7 @@ class MountVolumesFeatureStepSuite extends SparkFunSuite {
     val volumeConf = KubernetesVolumeSpec(
       "testVolume",
       "/tmp",
+      "",
       false,
       KubernetesHostPathVolumeConf("/hostPath/tmp")
     )
@@ -62,6 +63,7 @@ class MountVolumesFeatureStepSuite extends SparkFunSuite {
     val volumeConf = KubernetesVolumeSpec(
       "testVolume",
       "/tmp",
+      "",
       true,
       KubernetesPVCVolumeConf("pvcClaim")
     )
@@ -83,6 +85,7 @@ class MountVolumesFeatureStepSuite extends SparkFunSuite {
     val volumeConf = KubernetesVolumeSpec(
       "testVolume",
       "/tmp",
+      "",
       false,
       KubernetesEmptyDirVolumeConf(Some("Memory"), Some("6G"))
     )
@@ -104,6 +107,7 @@ class MountVolumesFeatureStepSuite extends SparkFunSuite {
     val volumeConf = KubernetesVolumeSpec(
       "testVolume",
       "/tmp",
+      "",
       false,
       KubernetesEmptyDirVolumeConf(None, None)
     )
@@ -125,12 +129,14 @@ class MountVolumesFeatureStepSuite extends SparkFunSuite {
     val hpVolumeConf = KubernetesVolumeSpec(
       "hpVolume",
       "/tmp",
+      "",
       false,
       KubernetesHostPathVolumeConf("/hostPath/tmp")
     )
     val pvcVolumeConf = KubernetesVolumeSpec(
       "checkpointVolume",
       "/checkpoints",
+      "",
       true,
       KubernetesPVCVolumeConf("pvcClaim")
     )
